@@ -11,6 +11,7 @@ from rango.models import UserProfile
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
+from datetime import datetime
 # Create your views here.
 
 
@@ -25,8 +26,18 @@ def index(request):
     context_dict = {}
     context_dict['boldmessage'] = 'Crunchy, creamy, cookie, candy, cupcake!'
     context_dict['categories'] = category_list
+    # int(request.COOKIES.get('visits', '1'))
     context_dict['pages'] = page_list
-    # Render the response and send it back!
+    visitor_cookie_handler(request)
+    context_dict['visits'] = request.session['visits']
+
+    visitor_cookie_handler(request)
+    visits = request.session.get('visits')
+    if visits:
+        request.session['visits'] = visits + 1
+    else:
+        request.session['visits'] = visits
+
     return render(request, 'rango/index.html', context=context_dict)
 
 
@@ -35,6 +46,9 @@ def about(request):
     print(request.method)
     # prints out the user name, if no one is logged in it prints `AnonymousUser`
     print(request.user)
+    visitor_cookie_handler(request)
+    visits = request.session.get('visits')
+    context_dict = {'visits': visits}
     return render(request, 'rango/about.html', context={})
 
 
@@ -59,8 +73,8 @@ def add_page(request, category_name_slug):
                 page.views = 0
                 page.save()
                 return redirect(reverse('rango:show_category',
-                     kwargs={'category_name_slug':
-                     category_name_slug}))
+                                        kwargs={'category_name_slug':
+                                                category_name_slug}))
             else:
                 print(form.errors)
     context_dict = {'form': form, 'category': category}
@@ -116,11 +130,12 @@ def show_category(request, category_name_slug):
     # Go render the response and return it to the client.
     return render(request, 'rango/category.html', context=context_dict)
 
+
 def register(request):
-    registered=False
+    registered = False
 
     if request.method == 'POST':
-        user_form=UserForm(request.POST)
+        user_form = UserForm(request.POST)
         profile_form = UserProfileForm(request.POST)
 
         if user_form.is_valid() and profile_form.is_valid():
@@ -140,7 +155,8 @@ def register(request):
     else:
         user_form = UserForm()
         profile_form = UserProfileForm()
-    return render(request,'rango/register.html',context = {'user_form': user_form,'profile_form': profile_form,'registered': registered})
+    return render(request, 'rango/register.html', context={'user_form': user_form, 'profile_form': profile_form, 'registered': registered})
+
 
 def user_login(request):
     if request.method == 'POST':
@@ -158,16 +174,19 @@ def user_login(request):
             return HttpResponse("Invalid login details supplied.")
     else:
         return render(request, 'rango/login.html')
-    
+
+
 def some_view(request):
     if not request.user.is_authenticated():
         return HttpResponse("You are logged in.")
     else:
         return HttpResponse("You are not logged in.")
 
+
 @login_required
 def restricted(request):
     return render(request, 'rango/restricted.html')
+
 
 @login_required
 def user_logout(request):
@@ -175,3 +194,28 @@ def user_logout(request):
     logout(request)
     # Take the user back to the homepage.
     return redirect(reverse('rango:index'))
+
+
+def visitor_cookie_handler(request):
+    visits = int(get_server_side_cookie(request, 'visits', '1'))
+    last_visit_cookie = get_server_side_cookie(
+        request, 'last_visit', str(datetime.now()))
+    last_visit_time = datetime.strptime(
+        last_visit_cookie[:-7], '%Y-%m-%d %H:%M:%S')
+    # If it's been more than a day since the last visit...
+    if (datetime.now() - last_visit_time).days > 0:
+        visits = visits + 1
+        # Update the last visit cookie now that we have updated the count
+        request.session['last_visit'] = str(datetime.now())
+    else:
+        # Set the last visit cookie
+        request.session['last_visit'] = last_visit_cookie
+        # Update/set the visits cookie
+    request.session['visits'] = visits
+
+
+def get_server_side_cookie(request, cookie, default_val=None):
+    val = request.session.get(cookie)
+    if not val:
+        val = default_val
+    return val
